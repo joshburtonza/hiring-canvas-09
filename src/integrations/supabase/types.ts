@@ -14,13 +14,275 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      contacts: {
+        Row: {
+          created_at: string
+          department: string | null
+          email: string | null
+          email_confidence: number | null
+          full_name: string
+          id: string
+          last_verified_at: string | null
+          linkedin_url: string | null
+          phone: string | null
+          role_title: string | null
+          school_id: string
+          source_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          email_confidence?: number | null
+          full_name: string
+          id?: string
+          last_verified_at?: string | null
+          linkedin_url?: string | null
+          phone?: string | null
+          role_title?: string | null
+          school_id: string
+          source_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department?: string | null
+          email?: string | null
+          email_confidence?: number | null
+          full_name?: string
+          id?: string
+          last_verified_at?: string | null
+          linkedin_url?: string | null
+          phone?: string | null
+          role_title?: string | null
+          school_id?: string
+          source_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      engagements: {
+        Row: {
+          channel: string
+          contact_id: string | null
+          created_at: string
+          id: string
+          last_touch_at: string | null
+          next_follow_up_at: string | null
+          owner: string | null
+          school_id: string
+          snippet: string | null
+          status: string | null
+          subject: string | null
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          last_touch_at?: string | null
+          next_follow_up_at?: string | null
+          owner?: string | null
+          school_id: string
+          snippet?: string | null
+          status?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          last_touch_at?: string | null
+          next_follow_up_at?: string | null
+          owner?: string | null
+          school_id?: string
+          snippet?: string | null
+          status?: string | null
+          subject?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "engagements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "engagements_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schools: {
+        Row: {
+          address: string | null
+          city: string | null
+          country: string | null
+          created_at: string
+          domain: string | null
+          id: string
+          name: string
+          phases: string[] | null
+          province: string | null
+          source_urls: string[] | null
+          subjects: string[] | null
+          type: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          domain?: string | null
+          id?: string
+          name: string
+          phases?: string[] | null
+          province?: string | null
+          source_urls?: string[] | null
+          subjects?: string[] | null
+          type?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          domain?: string | null
+          id?: string
+          name?: string
+          phases?: string[] | null
+          province?: string | null
+          source_urls?: string[] | null
+          subjects?: string[] | null
+          type?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      vacancies: {
+        Row: {
+          adzuna_id: string | null
+          apply_url: string | null
+          category: string | null
+          contract_time: string | null
+          contract_type: string | null
+          created_at: string
+          date_posted: string | null
+          description: string | null
+          id: string
+          raw_json: Json | null
+          salary_max: number | null
+          salary_min: number | null
+          school_id: string
+          status: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          adzuna_id?: string | null
+          apply_url?: string | null
+          category?: string | null
+          contract_time?: string | null
+          contract_type?: string | null
+          created_at?: string
+          date_posted?: string | null
+          description?: string | null
+          id?: string
+          raw_json?: Json | null
+          salary_max?: number | null
+          salary_min?: number | null
+          school_id: string
+          status?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          adzuna_id?: string | null
+          apply_url?: string | null
+          category?: string | null
+          contract_time?: string | null
+          contract_type?: string | null
+          created_at?: string
+          date_posted?: string | null
+          description?: string | null
+          id?: string
+          raw_json?: Json | null
+          salary_max?: number | null
+          salary_min?: number | null
+          school_id?: string
+          status?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vacancies_school_id_fkey"
+            columns: ["school_id"]
+            isOneToOne: false
+            referencedRelation: "schools"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      gtrgm_compress: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      gtrgm_decompress: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      gtrgm_in: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      gtrgm_options: {
+        Args: { "": unknown }
+        Returns: undefined
+      }
+      gtrgm_out: {
+        Args: { "": unknown }
+        Returns: unknown
+      }
+      set_limit: {
+        Args: { "": number }
+        Returns: number
+      }
+      show_limit: {
+        Args: Record<PropertyKey, never>
+        Returns: number
+      }
+      show_trgm: {
+        Args: { "": string }
+        Returns: string[]
+      }
     }
     Enums: {
       [_ in never]: never
