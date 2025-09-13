@@ -1,5 +1,6 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByZXZ0em9id3Rzbm9paHd5dGpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2NjE3NjAsImV4cCI6MjA3MzIzNzc2MH0.uCCzMFl2o6MypFX4Zt2FtBzT6QnPm7JyxyKR0YQJX6Y";
 /**
@@ -238,30 +239,23 @@ function buildQuery(payload: SearchPayload) {
 }
 
 async function sendDirectToN8N(payload: SearchPayload, url: string) {
-  if (SEND_METHOD === "GET") {
-    const qs = buildQuery(payload);
-    await fetch(`${url}?${qs}`, { method: "GET", mode: "no-cors" });
-    return null;
-  }
-  
-  // POST with proper CORS handling + Supabase Edge Function auth when applicable
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (url.includes(".supabase.co")) {
-    headers["Authorization"] = `Bearer ${SUPABASE_ANON_KEY}`;
-  }
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ ...payload, source: "dashboard_search" }),
+  // Prefer calling Supabase Edge Function which handles CORS and mapping
+  const { data, error } = await supabase.functions.invoke("search-trigger", {
+    body: { ...payload, source: "dashboard_search" },
   });
-  
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    const reason = errText || response.statusText || "Unknown error";
-    throw new Error(`HTTP ${response.status}: ${reason}`);
+  if (error) {
+    // If function invocation fails, attempt the proxy as a fallback
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (url.includes(".supabase.co")) headers["Authorization"] = `Bearer ${SUPABASE_ANON_KEY}`;
+      const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify({ ...payload, source: "dashboard_search" }) });
+      const text = await resp.text();
+      if (!resp.ok) throw new Error(text || resp.statusText);
+      return JSON.parse(text);
+    } catch (e) {
+      throw new Error((error as any)?.message || String(e));
+    }
   }
-  
-  const data = await response.json();
   return data;
 }
 
