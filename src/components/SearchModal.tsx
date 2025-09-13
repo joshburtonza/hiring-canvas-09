@@ -34,11 +34,11 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
     keywords: "",
     location: "",
     radius: 10,
-    contractType: "",
+    contractType: "any",
     dateRange: "7",
     salaryMin: 20000,
     salaryMax: 80000,
-    category: "",
+    category: "any",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -82,11 +82,11 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
         keywords: "",
         location: "",
         radius: 10,
-        contractType: "",
+        contractType: "any",
         dateRange: "7",
         salaryMin: 20000,
         salaryMax: 80000,
-        category: "",
+        category: "any",
       });
       onOpenChange(false);
 
@@ -178,7 +178,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
                   <SelectValue placeholder="Any contract type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Any contract type</SelectItem>
+                  <SelectItem value="any">Any contract type</SelectItem>
                   <SelectItem value="permanent">Permanent</SelectItem>
                   <SelectItem value="temporary">Temporary</SelectItem>
                   <SelectItem value="contract">Contract</SelectItem>
@@ -213,7 +213,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
                     <SelectValue placeholder="Any category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Any category</SelectItem>
+                    <SelectItem value="any">Any category</SelectItem>
                     <SelectItem value="teaching">Teaching Positions</SelectItem>
                     <SelectItem value="leadership">Leadership & Management</SelectItem>
                     <SelectItem value="support">Support Staff</SelectItem>
