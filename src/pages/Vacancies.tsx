@@ -15,6 +15,7 @@ interface Vacancy {
     name: string;
     city: string;
   };
+  location?: string;
   salary_min?: number;
   salary_max?: number;
   date_posted?: string;
@@ -54,7 +55,14 @@ export default function Vacancies() {
         .order("date_posted", { ascending: false });
 
       if (error) throw error;
-      setVacancies(data || []);
+      
+      // Extract location from raw_json and add it to each vacancy
+      const vacanciesWithLocation = (data || []).map(vacancy => ({
+        ...vacancy,
+        location: (vacancy.raw_json as any)?.location || null
+      }));
+
+      setVacancies(vacanciesWithLocation);
     } catch (error) {
       console.error("Error fetching vacancies:", error);
     } finally {
@@ -159,7 +167,7 @@ export default function Vacancies() {
                     <div className="font-medium text-foreground">{vacancy.title}</div>
                   </td>
                   <td className="p-4 text-foreground">{vacancy.school?.name || "Unknown"}</td>
-                  <td className="p-4 text-muted-foreground">{vacancy.school?.city || "Unknown"}</td>
+                  <td className="p-4 text-muted-foreground">{vacancy.location || vacancy.school?.city || "Unknown"}</td>
                   <td className="p-4 text-muted-foreground">{formatDate(vacancy.date_posted)}</td>
                   <td className="p-4 text-foreground">{formatSalary(vacancy.salary_min, vacancy.salary_max)}</td>
                   <td className="p-4">
