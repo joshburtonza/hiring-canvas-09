@@ -72,6 +72,22 @@ Deno.serve(async (req: Request) => {
       payload = { raw: text };
     }
 
+    // Special handling for n8n webhook registration errors
+    if (upstream.status === 404 && typeof payload === 'object' && payload !== null) {
+      const errorObj = payload as any;
+      if (errorObj.code === 404 && errorObj.message?.includes('webhook') && errorObj.message?.includes('not registered')) {
+        return new Response(JSON.stringify({
+          error: "n8n Webhook Not Active",
+          message: "The n8n workflow needs to be saved and activated. Please go to your n8n workflow, click 'Save' and ensure the webhook is active.",
+          hint: "In test mode, click 'Save' in n8n, then try the search again immediately.",
+          originalError: errorObj
+        }), {
+          status: 424, // Failed Dependency
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+    }
+
     return new Response(JSON.stringify(payload), {
       status: upstream.status,
       headers: { "Content-Type": "application/json", ...corsHeaders },
