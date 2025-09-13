@@ -41,19 +41,8 @@ serve(async (req) => {
       );
     }
 
-    // Get n8n webhook URL from environment variables
-    const n8nWebhookUrl = Deno.env.get('N8N_WEBHOOK_URL');
-    
-    if (!n8nWebhookUrl) {
-      console.error('N8N_WEBHOOK_URL environment variable not set');
-      return new Response(
-        JSON.stringify({ error: 'N8N webhook URL not configured' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
+    // Use the configured n8n webhook URL
+    const n8nWebhookUrl = 'https://soarai.app.n8n.cloud/webhook/edu-search';
 
     // Prepare payload for n8n
     const n8nPayload = {
