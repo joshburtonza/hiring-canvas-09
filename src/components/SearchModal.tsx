@@ -104,7 +104,8 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto glass-card border-[hsl(var(--line))]">
+      <DialogContent className="modal-content max-w-2xl max-h-[90vh] overflow-y-auto glass-card border-[hsl(var(--line))] 
+        shadow-2xl backdrop-blur-lg will-change-transform">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Search className="w-5 h-5 text-primary" />
@@ -123,7 +124,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
               placeholder="e.g. Math Teacher, Head of Department, Science..."
               value={searchParams.keywords}
               onChange={(e) => setSearchParams(prev => ({ ...prev, keywords: e.target.value }))}
-              className="bg-background/50 border-[hsl(var(--line))]"
+            className="bg-background/50 border-[hsl(var(--line))] smooth-transition focus:ring-2 focus:ring-primary/20"
             />
           </div>
 
@@ -138,7 +139,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
               placeholder="e.g. London, Manchester, Birmingham..."
               value={searchParams.location}
               onChange={(e) => setSearchParams(prev => ({ ...prev, location: e.target.value }))}
-              className="bg-background/50 border-[hsl(var(--line))]"
+            className="bg-background/50 border-[hsl(var(--line))] smooth-transition focus:ring-2 focus:ring-primary/20"
             />
           </div>
 
@@ -194,7 +195,7 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
               <Button 
                 type="button" 
                 variant="outline" 
-                className="w-full justify-center gap-2 bg-background/50 border-[hsl(var(--line))]"
+                className="w-full justify-center gap-2 bg-background/50 border-[hsl(var(--line))] smooth-transition hover-lift"
               >
                 <Filter className="w-4 h-4" />
                 {showAdvanced ? "Hide" : "Show"} Advanced Filters
@@ -271,14 +272,14 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="flex-1 bg-background/50 border-[hsl(var(--line))]"
+              className="flex-1 bg-background/50 border-[hsl(var(--line))] smooth-transition hover-lift"
             >
               Cancel
             </Button>
             <Button
               type="submit"
               disabled={isSubmitting || !searchParams.keywords.trim()}
-              className="flex-1"
+              className="flex-1 smooth-transition hover-lift"
             >
               {isSubmitting ? "Submitting..." : "Search Jobs"}
             </Button>

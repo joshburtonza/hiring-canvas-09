@@ -125,4 +125,41 @@
   .sidebar-nav-item.active {
     @apply bg-[hsl(var(--brand)/0.15)] text-[hsl(var(--brand))] border-l-2 border-[hsl(var(--brand))];
   }
+
+  /* Modal animations */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 bg-black/80 backdrop-blur-sm;
+    animation: fade-in 0.2s ease-out;
+  }
+
+  .modal-content {
+    @apply fixed left-1/2 top-1/2 z-50 w-full max-w-2xl;
+    transform: translate(-50%, -50%);
+    animation: modal-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes modal-enter {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, -48%) scale(0.95);
+    }
+    100% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  @keyframes fade-in {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  /* Smooth transitions for interactive elements */
+  .smooth-transition {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  .hover-lift {
+    @apply transform transition-all duration-200 ease-out hover:scale-[1.02] hover:-translate-y-1;
+  }
 }
