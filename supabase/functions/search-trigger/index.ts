@@ -1,17 +1,14 @@
-// supabase/functions/search-trigger/index.ts
-// Fix B: Production-only, robust fallbacks (POST then GET), clear errors, full CORS.
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 type SearchParams = {
   keywords: string;
   location?: string;
   radius?: number;
-  contractType?: string;   // "permanent" | "contract" | "temporary" | "part_time" | "any"
-  dateRange?: string | number; // 1 | 7 | 30 | 90
+  contractType?: string;
+  dateRange?: string | number;
   salaryMin?: number;
   salaryMax?: number;
-  category?: string;       // "teaching", etc.
+  category?: string;
   timestamp: string;
 };
 
@@ -21,7 +18,6 @@ const corsHeaders: HeadersInit = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ✅ Production webhook only (no test URL)
 const N8N_WEBHOOK_PROD = "https://soarai.app.n8n.cloud/webhook/edu-search";
 
 function qsFrom(obj: Record<string, unknown>): string {
@@ -41,58 +37,47 @@ async function postJson(url: string, body: unknown) {
   });
 }
 
-function classifyUpstream(status: number, text: string) {
+function classify(status: number, text: string) {
   const lower = text.toLowerCase();
-  // n8n common errors
   if (status === 404 && (lower.includes("not registered") || lower.includes("no webhook"))) {
     return {
-      status: 424,
+      httpStatus: 424,
       code: "N8N_WEBHOOK_NOT_ACTIVE",
       message:
-        "The n8n webhook is not active. Open your n8n workflow, click Save/Activate, and ensure the workflow is running.",
-      hint:
-        "In the Webhook node, either set Respond=Immediately OR add a 'Respond to Webhook' node and wire it at the end.",
-    };
-  }
-  if (status === 405) {
-    return {
-      status: 424,
-      code: "N8N_METHOD_MISMATCH",
-      message:
-        "The n8n webhook refused the HTTP method. Confirm the Webhook node method is POST, or allow GET if you plan to call it with query params.",
-      hint: "In your Webhook node settings, set HTTP Method to POST.",
-    };
-  }
-  if (status === 415) {
-    return {
-      status: 424,
-      code: "N8N_UNSUPPORTED_MEDIA",
-      message:
-        "The n8n webhook did not accept the content type. Ensure the Webhook node expects JSON or switch to GET with query params.",
+        "n8n production webhook is not active. Open the workflow, click Save, and toggle Active. Verify path=edu-search.",
     };
   }
   if (status === 500 && lower.includes("workflow could not be started")) {
     return {
-      status: 424,
+      httpStatus: 424,
       code: "N8N_WORKFLOW_START_FAILED",
       message:
-        "n8n reports: 'Workflow could not be started'. Make sure the workflow is active and the Webhook trigger is the entry node.",
-      hint:
-        "Open the workflow, click Save/Activate. If Respond is set to 'Using Respond to Webhook node', add that node and wire it.",
+        "n8n: Workflow could not be started. Set Respond=Immediately or add a Respond to Webhook node and wire it; then Save/Activate.",
+    };
+  }
+  if (status === 405) {
+    return {
+      httpStatus: 405,
+      code: "N8N_METHOD_MISMATCH",
+      message: "n8n refused POST (method mismatch).",
+    };
+  }
+  if (status === 415) {
+    return {
+      httpStatus: 415,
+      code: "N8N_UNSUPPORTED_MEDIA",
+      message: "n8n refused JSON content type.",
     };
   }
   return {
-    status: 502,
+    httpStatus: 502,
     code: "N8N_UPSTREAM_ERROR",
     message: `n8n upstream error (${status}).`,
   };
 }
 
 serve(async (req: Request) => {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     if (req.method !== "POST") {
@@ -102,17 +87,15 @@ serve(async (req: Request) => {
       });
     }
 
-    // Parse payload
     const body = (await req.json().catch(() => ({}))) as Partial<SearchParams>;
     const keywords = (body.keywords ?? "").toString().trim();
     if (!keywords) {
-      return new Response(
-        JSON.stringify({ error: "Keywords are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+      return new Response(JSON.stringify({ error: "Keywords are required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // Normalize & build payload aligned with your n8n flow
     const payload = {
       searchType: "adzuna",
       parameters: {
@@ -132,60 +115,63 @@ serve(async (req: Request) => {
       },
     };
 
-    // 1) Try POST (preferred)
+    // 1) Try POST (expected path)
     let upstream = await postJson(N8N_WEBHOOK_PROD, payload);
+    if (upstream.ok) {
+      const ct = upstream.headers.get("content-type") ?? "";
+      const data = ct.includes("application/json") ? await upstream.json() : { raw: await upstream.text() };
+      return new Response(JSON.stringify({ ok: true, method: "POST", requestId: payload.metadata.requestId, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    // 2) If POST fails, try GET with query params (same production webhook)
-    if (!upstream.ok) {
-      const text = await upstream.text().catch(() => "");
-      const errInfo = classifyUpstream(upstream.status ?? 500, text);
+    const text = await upstream.text().catch(() => "");
+    const reason = classify(upstream.status ?? 500, text);
 
-      // GET fallback can help in some n8n configs (e.g., method mismatch, JSON expectations)
-      const getQS = qsFrom({
+    // 2) Only try GET if method/content-type mismatch
+    if (reason.httpStatus === 405 || reason.httpStatus === 415) {
+      const qs = qsFrom({
         ...payload.parameters,
         source: payload.metadata.source,
         requestId: payload.metadata.requestId,
         timestamp: payload.metadata.timestamp,
       });
-      const tryGet = await fetch(`${N8N_WEBHOOK_PROD}?${getQS}`, { method: "GET" });
-
-      if (!tryGet.ok) {
-        const text2 = await tryGet.text().catch(() => "");
-        const finalInfo = classifyUpstream(tryGet.status ?? 500, text2);
-
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            error: finalInfo.code,
-            message: finalInfo.message,
-            hint: finalInfo.hint,
-            upstream: { post: { status: upstream.status, body: text }, get: { status: tryGet.status, body: text2 } },
-          }),
-          { status: finalInfo.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+      const resGet = await fetch(`${N8N_WEBHOOK_PROD}?${qs}`, { method: "GET" });
+      if (resGet.ok) {
+        const ct2 = resGet.headers.get("content-type") ?? "";
+        const data2 = ct2.includes("application/json") ? await resGet.json() : { raw: await resGet.text() };
+        return new Response(JSON.stringify({ ok: true, method: "GET", requestId: payload.metadata.requestId, data: data2 }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
-
-      // GET succeeded
-      const ct = tryGet.headers.get("content-type") || "";
-      const data = ct.includes("application/json") ? await tryGet.json() : { raw: await tryGet.text() };
-      return new Response(JSON.stringify({ ok: true, method: "GET", requestId: payload.metadata.requestId, data }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const t2 = await resGet.text().catch(() => "");
+      const r2 = classify(resGet.status ?? 500, t2);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: r2.code,
+          message: r2.message,
+          upstream: { post: { status: upstream.status, body: text }, get: { status: resGet.status, body: t2 } },
+        }),
+        { status: r2.httpStatus, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // POST succeeded
-    const ct = upstream.headers.get("content-type") || "";
-    const data = ct.includes("application/json") ? await upstream.json() : { raw: await upstream.text() };
-
+    // 3) Don't try GET for 404/500—return actionable error
     return new Response(
-      JSON.stringify({ ok: true, method: "POST", requestId: payload.metadata.requestId, data }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        ok: false,
+        error: reason.code,
+        message: reason.message,
+        upstream: { post: { status: upstream.status, body: text } },
+      }),
+      { status: reason.httpStatus, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err) {
     console.error("search-trigger error:", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "EDGE_ERROR", message: String(err) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ ok: false, error: "EDGE_ERROR", message: String(err) }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
