@@ -273,11 +273,19 @@ export function SearchModal({
     try {
       if (onSubmit) {
         await onSubmit(payload);
-      } else if (webhookUrl) {
-        const { error } = await supabase.functions.invoke('search-trigger', {
-          body: payload
+      } else {
+        // Send directly to n8n webhook
+        const response = await fetch('https://soarai.app.n8n.cloud/webhook/edu-search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
         });
-        if (error) throw error;
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
       }
       
       toast({
