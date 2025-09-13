@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { BarChart3, Building2, Calendar, Home, Settings, Users, Search } from "lucide-react";
 import SearchModal from "./SearchModal";
+import { toast } from "@/components/ui/use-toast";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
@@ -52,6 +53,9 @@ export function Sidebar() {
       <SearchModal 
         open={isSearchModalOpen} 
         onClose={() => setIsSearchModalOpen(false)}
+        onNotify={(type, title, desc) =>
+          toast({ title, description: desc, variant: type === "error" ? "destructive" : undefined })
+        }
       />
     </>
   );
