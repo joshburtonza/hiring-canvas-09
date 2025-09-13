@@ -1,12 +1,13 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InByZXZ0em9id3Rzbm9paHd5dGpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc2NjE3NjAsImV4cCI6MjA3MzIzNzc2MH0.uCCzMFl2o6MypFX4Zt2FtBzT6QnPm7JyxyKR0YQJX6Y";
 /**
  * ---------- CONFIG ----------
  * n8n webhook target (GET). Uses the URL you provided.
  * If you later switch your Webhook node to POST + proper CORS, set SEND_METHOD to "POST".
  */
-const N8N_WEBHOOK_URL = "https://soarai.app.n8n.cloud/webhook/edu-search";
+const N8N_WEBHOOK_URL = "https://prevtzobwtsnoihwytjg.supabase.co/functions/v1/edu-search-proxy";
 const SEND_METHOD: "GET" | "POST" = "POST";
 
 /* ========================================================================== */
@@ -243,10 +244,14 @@ async function sendDirectToN8N(payload: SearchPayload, url: string) {
     return null;
   }
   
-  // POST with proper CORS handling
+  // POST with proper CORS handling + Supabase Edge Function auth when applicable
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (url.includes(".supabase.co")) {
+    headers["Authorization"] = `Bearer ${SUPABASE_ANON_KEY}`;
+  }
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ ...payload, source: "dashboard_search" }),
   });
   
