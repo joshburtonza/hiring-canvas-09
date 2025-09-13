@@ -8,3 +8,6 @@ jwt_expiry = 3600
 
 [functions.intake]
 verify_jwt = false
+
+[functions.search-trigger]
+verify_jwt = false
