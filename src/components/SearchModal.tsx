@@ -1,17 +1,27 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 
-/* -----------------------------------------------------------
-   GlassSelect — custom, stylable select (no external libs)
-   - Accessible roles (combobox/listbox/option)
-   - Keyboard: Enter/Space toggle, ↑/↓ navigate, Esc close
-   - Portal-based menu; positions under trigger
------------------------------------------------------------ */
-type Option<T extends string | number> = { value: T; label: string };
+/**
+ * ---------- CONFIG ----------
+ * n8n webhook target (GET). Uses the URL you provided.
+ * If you later switch your Webhook node to POST + proper CORS, set SEND_METHOD to "POST".
+ */
+const N8N_WEBHOOK_URL = "https://soarai.app.n8n.cloud/webhook/edu-search";
+const SEND_METHOD: "GET" | "POST" = "GET";
 
-function GlassSelect<T extends string | number>({
+/* ========================================================================== */
+/* GlassSelect — custom, stylable select (no external libs)                   */
+/* ========================================================================== */
+
+type SelectValue = string | number;
+type Option<T extends SelectValue> = { value: T; label: string };
+
+function useUniqueId(prefix = "id") {
+  const [id] = React.useState(() => `${prefix}-${Math.random().toString(36).slice(2, 9)}`);
+  return id;
+}
+
+function GlassSelect<T extends SelectValue>({
   value,
   onChange,
   options,
@@ -30,6 +40,7 @@ function GlassSelect<T extends string | number>({
   const [open, setOpen] = React.useState(false);
   const [highlight, setHighlight] = React.useState<number>(-1);
   const [menuStyle, setMenuStyle] = React.useState<React.CSSProperties>({});
+  const menuId = useUniqueId("glass-select-menu");
 
   const selected = options.find((o) => o.value === value);
 
@@ -48,27 +59,23 @@ function GlassSelect<T extends string | number>({
       zIndex: 60,
     });
     setOpen(true);
-    // set initial highlight to current selection
-    const idx = Math.max(
-      0,
-      options.findIndex((o) => o.value === value),
-    );
-    setHighlight(idx === -1 ? 0 : idx);
+    const idx = options.findIndex((o) => o.value === value);
+    setHighlight(idx >= 0 ? idx : 0);
   }
 
   React.useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (!triggerRef.current) return;
       const trg = triggerRef.current;
-      const menu = document.getElementById("glass-select-menu");
-      if (menu && (menu.contains(e.target as Node) || trg.contains(e.target as Node))) return;
+      const menu = document.getElementById(menuId);
+      if (!trg || !menu) return;
+      if (menu.contains(e.target as Node) || trg.contains(e.target as Node)) return;
       close();
     };
     const onWin = () => {
-      // reposition on resize/scroll
-      if (!triggerRef.current) return;
-      const r = triggerRef.current.getBoundingClientRect();
+      const trg = triggerRef.current;
+      if (!trg) return;
+      const r = trg.getBoundingClientRect();
       setMenuStyle((s) => ({ ...s, top: r.bottom + 8, left: r.left, width: r.width }));
     };
     document.addEventListener("mousedown", onDoc);
@@ -79,7 +86,7 @@ function GlassSelect<T extends string | number>({
       window.removeEventListener("resize", onWin);
       window.removeEventListener("scroll", onWin, true);
     };
-  }, [open, value, options.length]);
+  }, [open, value, options.length, menuId]);
 
   function onKeyDown(e: React.KeyboardEvent) {
     if (!open && (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ")) {
@@ -111,7 +118,7 @@ function GlassSelect<T extends string | number>({
   const menu = open
     ? createPortal(
         <div
-          id="glass-select-menu"
+          id={menuId}
           style={menuStyle}
           role="listbox"
           aria-label={ariaLabel}
@@ -144,7 +151,7 @@ function GlassSelect<T extends string | number>({
             })}
           </ul>
         </div>,
-        document.body,
+        document.body
       )
     : null;
 
@@ -168,12 +175,7 @@ function GlassSelect<T extends string | number>({
         <span className={!selected ? "text-slate-400" : ""}>
           {selected ? selected.label : placeholder || "Select…"}
         </span>
-        <svg
-          className="ml-3 h-4 w-4 opacity-70"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          aria-hidden="true"
-        >
+        <svg className="ml-3 h-4 w-4 opacity-70" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path d="M5.25 7.5L10 12.25L14.75 7.5H5.25Z" />
         </svg>
       </button>
@@ -182,10 +184,11 @@ function GlassSelect<T extends string | number>({
   );
 }
 
-/* -----------------------------------------------------------
-   Search Modal (uses GlassSelect)
------------------------------------------------------------ */
-type SearchPayload = {
+/* ========================================================================== */
+/* Search Modal (centered, accessible, portal, GET → n8n)                     */
+/* ========================================================================== */
+
+export type SearchPayload = {
   keywords: string;
   location?: string;
   radius?: number;
@@ -200,9 +203,10 @@ type SearchPayload = {
 type Props = {
   open: boolean;
   onClose: () => void;
-  webhookUrl?: string; // e.g. "/search-trigger"
-  onSubmit?: (payload: SearchPayload) => Promise<void> | void;
+  webhookUrl?: string; // optional override (defaults to N8N_WEBHOOK_URL)
+  onSubmit?: (payload: SearchPayload) => Promise<void> | void; // optional custom handler
   defaults?: Partial<SearchPayload>;
+  onNotify?: (type: "success" | "error", title: string, desc?: string) => void; // optional toast hook
 };
 
 const defaultValues: SearchPayload = {
@@ -217,32 +221,61 @@ const defaultValues: SearchPayload = {
   timestamp: new Date().toISOString(),
 };
 
-export function SearchModal({
+function buildQuery(payload: SearchPayload) {
+  const params = new URLSearchParams();
+  params.set("keywords", payload.keywords);
+  if (payload.location) params.set("location", payload.location);
+  if (typeof payload.radius === "number") params.set("radius", String(payload.radius));
+  if (payload.contractType) params.set("contractType", payload.contractType);
+  if (payload.dateRange) params.set("dateRange", String(payload.dateRange));
+  if (typeof payload.salaryMin === "number") params.set("salaryMin", String(payload.salaryMin));
+  if (typeof payload.salaryMax === "number") params.set("salaryMax", String(payload.salaryMax));
+  if (payload.category) params.set("category", payload.category);
+  params.set("timestamp", payload.timestamp);
+  params.set("source", "dashboard_search");
+  return params.toString();
+}
+
+async function sendDirectToN8N(payload: SearchPayload, url: string) {
+  if (SEND_METHOD === "GET") {
+    const qs = buildQuery(payload);
+    // trigger-only call; we don't need to read the response body
+    await fetch(`${url}?${qs}`, { method: "GET", mode: "no-cors" });
+    return;
+  }
+  // POST branch (use if you later enable CORS/proxy)
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    mode: "no-cors",
+  });
+}
+
+export default function SearchModal({
   open,
   onClose,
   webhookUrl,
   onSubmit,
   defaults,
+  onNotify,
 }: Props) {
-  const { toast } = useToast();
   const [mounted, setMounted] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
   const firstFieldRef = React.useRef<HTMLInputElement | null>(null);
   const overlayRef = React.useRef<HTMLDivElement | null>(null);
 
-  const [form, setForm] = React.useState<SearchPayload>({
-    ...defaultValues,
-    ...defaults,
-  });
+  const [form, setForm] = React.useState<SearchPayload>({ ...defaultValues, ...defaults });
 
   React.useEffect(() => setMounted(true), []);
   React.useEffect(() => {
-    if (open) {
-      setForm((f) => ({ ...defaultValues, ...defaults, timestamp: new Date().toISOString() }));
-      const id = window.setTimeout(() => firstFieldRef.current?.focus(), 0);
-      return () => window.clearTimeout(id);
-    }
+    if (!open) return;
+    setForm((f) => ({ ...defaultValues, ...defaults, timestamp: new Date().toISOString() }));
+    const id = window.setTimeout(() => firstFieldRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
   }, [open, defaults]);
 
+  // ESC to close
   React.useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -256,44 +289,33 @@ export function SearchModal({
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
+    if (submitting) return;
+
     const payload: SearchPayload = {
       ...form,
       keywords: form.keywords.trim(),
       timestamp: new Date().toISOString(),
     };
     if (!payload.keywords) {
-      toast({
-        title: "Keywords required",
-        description: "Please enter search keywords to continue.",
-        variant: "destructive",
-      });
+      onNotify?.("error", "Keywords required", "Please enter search keywords to continue.");
       firstFieldRef.current?.focus();
       return;
     }
+
+    setSubmitting(true);
     try {
       if (onSubmit) {
         await onSubmit(payload);
       } else {
-        // Use the search-trigger edge function to handle the webhook call
-        const { error } = await supabase.functions.invoke('search-trigger', {
-          body: payload
-        });
-        if (error) throw error;
+        await sendDirectToN8N(payload, webhookUrl || N8N_WEBHOOK_URL);
       }
-      
-      toast({
-        title: "Search submitted successfully",
-        description: "Your job search has been initiated. Results will appear in the dashboard shortly.",
-      });
-      
+      onNotify?.("success", "Search submitted", "Your job search has been sent to the workflow.");
       onClose();
     } catch (err) {
       console.error("Search submit failed:", err);
-      toast({
-        title: "Search failed",
-        description: "There was an error submitting your search. Please try again.",
-        variant: "destructive",
-      });
+      onNotify?.("error", "Search failed", "We couldn't submit your search. Try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -348,7 +370,7 @@ export function SearchModal({
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm text-slate-300">Posted Within</label>
-            <GlassSelect
+            <GlassSelect<number>
               aria-label="Posted Within"
               value={form.dateRange}
               onChange={(v) => update("dateRange", v as SearchPayload["dateRange"])}
@@ -356,14 +378,14 @@ export function SearchModal({
                 { value: 1, label: "Last day" },
                 { value: 7, label: "Last week" },
                 { value: 30, label: "Last 30 days" },
-                { value: 90, label: "Last 90 days" }
+                { value: 90, label: "Last 90 days" },
               ]}
               placeholder="Choose range"
             />
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-300">Contract Type</label>
-            <GlassSelect
+            <GlassSelect<string>
               aria-label="Contract Type"
               value={form.contractType || "any"}
               onChange={(v) => update("contractType", v as SearchPayload["contractType"])}
@@ -372,7 +394,7 @@ export function SearchModal({
                 { value: "permanent", label: "Permanent" },
                 { value: "contract", label: "Contract" },
                 { value: "temporary", label: "Temporary" },
-                { value: "part_time", label: "Part-time" }
+                { value: "part_time", label: "Part-time" },
               ]}
               placeholder="Choose contract"
             />
@@ -442,9 +464,10 @@ export function SearchModal({
           </button>
           <button
             type="submit"
-            className="h-11 rounded-full bg-[rgb(96,141,196)]/85 font-semibold text-white hover:bg-[rgb(96,141,196)]"
+            disabled={submitting}
+            className="h-11 rounded-full bg-[rgb(96,141,196)]/85 font-semibold text-white hover:bg-[rgb(96,141,196)] disabled:opacity-60"
           >
-            Search Jobs
+            {submitting ? "Submitting…" : "Search Jobs"}
           </button>
         </div>
       </form>
@@ -452,3 +475,11 @@ export function SearchModal({
     document.body
   );
 }
+
+/* ================================
+   Minimal usage example:
+
+   const [open, setOpen] = React.useState(false);
+   <button onClick={() => setOpen(true)}>Search</button>
+   <SearchModal open={open} onClose={() => setOpen(false)} />
+================================== */

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { BarChart3, Building2, Calendar, Home, Settings, Users, Search } from "lucide-react";
-import { SearchModal } from "./SearchModal";
+import SearchModal from "./SearchModal";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: Home },
