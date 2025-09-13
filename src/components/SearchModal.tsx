@@ -370,7 +370,7 @@ export default function SearchModal({
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-sm text-slate-300">Posted Within</label>
-            <GlassSelect<number>
+            <GlassSelect
               aria-label="Posted Within"
               value={form.dateRange}
               onChange={(v) => update("dateRange", v as SearchPayload["dateRange"])}
@@ -385,7 +385,7 @@ export default function SearchModal({
           </div>
           <div>
             <label className="mb-1 block text-sm text-slate-300">Contract Type</label>
-            <GlassSelect<string>
+            <GlassSelect
               aria-label="Contract Type"
               value={form.contractType || "any"}
               onChange={(v) => update("contractType", v as SearchPayload["contractType"])}
