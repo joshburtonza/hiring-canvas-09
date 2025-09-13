@@ -256,7 +256,9 @@ async function sendDirectToN8N(payload: SearchPayload, url: string) {
   });
   
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    const errText = await response.text().catch(() => "");
+    const reason = errText || response.statusText || "Unknown error";
+    throw new Error(`HTTP ${response.status}: ${reason}`);
   }
   
   const data = await response.json();

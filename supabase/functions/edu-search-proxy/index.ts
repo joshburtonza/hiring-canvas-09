@@ -21,19 +21,49 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const n8nUrl = Deno.env.get("N8N_WEBHOOK_URL") ?? "https://soarai.app.n8n.cloud/webhook/edu-search";
+  const n8nUrlBase = Deno.env.get("N8N_WEBHOOK_URL") ?? "https://soarai.app.n8n.cloud/webhook/edu-search";
 
   try {
     const body = await req.json().catch(() => ({}));
+    console.log("edu-search-proxy: incoming body", body);
 
-    const upstream = await fetch(n8nUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    // Try production webhook first
+    const tryUrls = [
+      n8nUrlBase,
+      // Fallback to test webhook if the first returns 404
+      n8nUrlBase.replace("/webhook/", "/webhook-test/")
+    ];
+
+    let upstream: Response | null = null;
+    let chosenUrl = tryUrls[0];
+
+    for (const url of tryUrls) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.status !== 404) {
+        upstream = res;
+        chosenUrl = url;
+        break;
+      }
+      // keep last 404 for reporting
+      upstream = res;
+    }
+
+    console.log("edu-search-proxy: upstream url", chosenUrl, "status", upstream?.status);
+
+    if (!upstream) {
+      return new Response(JSON.stringify({ error: "No upstream response" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
 
     const contentType = upstream.headers.get("content-type") || "";
     const text = await upstream.text();
+    console.log("edu-search-proxy: upstream body", text.slice(0, 200));
 
     let payload: unknown;
     try {
