@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
  * If you later switch your Webhook node to POST + proper CORS, set SEND_METHOD to "POST".
  */
 const N8N_WEBHOOK_URL = "https://soarai.app.n8n.cloud/webhook/edu-search";
-const SEND_METHOD: "GET" | "POST" = "GET";
+const SEND_METHOD: "GET" | "POST" = "POST";
 
 /* ========================================================================== */
 /* GlassSelect — custom, stylable select (no external libs)                   */
@@ -239,17 +239,23 @@ function buildQuery(payload: SearchPayload) {
 async function sendDirectToN8N(payload: SearchPayload, url: string) {
   if (SEND_METHOD === "GET") {
     const qs = buildQuery(payload);
-    // trigger-only call; we don't need to read the response body
     await fetch(`${url}?${qs}`, { method: "GET", mode: "no-cors" });
-    return;
+    return null;
   }
-  // POST branch (use if you later enable CORS/proxy)
-  await fetch(url, {
+  
+  // POST with proper CORS handling
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    mode: "no-cors",
+    body: JSON.stringify({ ...payload, source: "dashboard_search" }),
   });
+  
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return data;
 }
 
 export default function SearchModal({
@@ -307,13 +313,17 @@ export default function SearchModal({
       if (onSubmit) {
         await onSubmit(payload);
       } else {
-        await sendDirectToN8N(payload, webhookUrl || N8N_WEBHOOK_URL);
+        const result = await sendDirectToN8N(payload, webhookUrl || N8N_WEBHOOK_URL);
+        if (result) {
+          console.log("Search response:", result);
+        }
       }
-      onNotify?.("success", "Search submitted", "Your job search has been sent to the workflow.");
+      onNotify?.("success", "Search submitted", "Your job search has been sent successfully.");
       onClose();
     } catch (err) {
       console.error("Search submit failed:", err);
-      onNotify?.("error", "Search failed", "We couldn't submit your search. Try again.");
+      const errorMsg = err instanceof Error ? err.message : "Unknown error occurred";
+      onNotify?.("error", "Search failed", `Could not submit search: ${errorMsg}`);
     } finally {
       setSubmitting(false);
     }
