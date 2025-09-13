@@ -1,290 +1,281 @@
-import { useState } from "react";
-import { Search, Calendar, MapPin, DollarSign, Building, Filter } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import * as React from "react";
+import { createPortal } from "react-dom";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
-interface SearchModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
-interface SearchParams {
+type SearchPayload = {
   keywords: string;
-  location: string;
-  radius: number;
-  contractType: string;
-  dateRange: string;
-  salaryMin: number;
-  salaryMax: number;
-  category: string;
-}
+  location?: string;
+  radius?: number;
+  contractType?: "permanent" | "contract" | "temporary" | "part_time" | "any";
+  dateRange?: 1 | 7 | 30 | 90;
+  salaryMin?: number;
+  salaryMax?: number;
+  category?: string;
+  timestamp: string;
+};
 
-export function SearchModal({ open, onOpenChange }: SearchModalProps) {
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  /** If you want this component to POST for you, pass your webhook/edge URL (e.g. '/search-trigger'). */
+  webhookUrl?: string;
+  /** Optional: intercept payload before/after POST. If provided, you control submission. */
+  onSubmit?: (payload: SearchPayload) => Promise<void> | void;
+  /** Initial values (optional) */
+  defaults?: Partial<SearchPayload>;
+};
+
+const defaultValues: SearchPayload = {
+  keywords: "",
+  location: "",
+  radius: 0,
+  contractType: "any",
+  dateRange: 7,
+  salaryMin: undefined,
+  salaryMax: undefined,
+  category: "teaching",
+  timestamp: new Date().toISOString(),
+};
+
+export function SearchModal({
+  open,
+  onClose,
+  webhookUrl, // e.g. "/search-trigger" (edge function) -> n8n webhook
+  onSubmit,
+  defaults,
+}: Props) {
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [searchParams, setSearchParams] = useState<SearchParams>({
-    keywords: "",
-    location: "",
-    radius: 10,
-    contractType: "any",
-    dateRange: "7",
-    salaryMin: 20000,
-    salaryMax: 80000,
-    category: "any",
+  const [mounted, setMounted] = React.useState(false);
+  const firstFieldRef = React.useRef<HTMLInputElement | null>(null);
+  const overlayRef = React.useRef<HTMLDivElement | null>(null);
+
+  const [form, setForm] = React.useState<SearchPayload>({
+    ...defaultValues,
+    ...defaults,
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!searchParams.keywords.trim()) {
+  React.useEffect(() => setMounted(true), []);
+  React.useEffect(() => {
+    if (open) {
+      setForm((f) => ({ ...defaultValues, ...defaults, timestamp: new Date().toISOString() }));
+      // focus the first field after paint
+      const id = window.setTimeout(() => firstFieldRef.current?.focus(), 0);
+      return () => window.clearTimeout(id);
+    }
+  }, [open, defaults]);
+
+  // Close on ESC
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  function update<K extends keyof SearchPayload>(key: K, val: SearchPayload[K]) {
+    setForm((f) => ({ ...f, [key]: val }));
+  }
+
+  async function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
+    const payload: SearchPayload = {
+      ...form,
+      keywords: form.keywords.trim(),
+      timestamp: new Date().toISOString(),
+    };
+    if (!payload.keywords) {
       toast({
         title: "Keywords required",
         description: "Please enter search keywords to continue.",
         variant: "destructive",
       });
+      firstFieldRef.current?.focus();
       return;
     }
-
-    setIsSubmitting(true);
-
     try {
-      const { data, error } = await supabase.functions.invoke('search-trigger', {
-        body: {
-          keywords: searchParams.keywords,
-          location: searchParams.location,
-          radius: searchParams.radius,
-          contractType: searchParams.contractType,
-          dateRange: searchParams.dateRange,
-          salaryMin: searchParams.salaryMin,
-          salaryMax: searchParams.salaryMax,
-          category: searchParams.category,
-          timestamp: new Date().toISOString(),
-        }
-      });
-
-      if (error) throw error;
-
+      if (onSubmit) {
+        await onSubmit(payload);
+      } else if (webhookUrl) {
+        const { error } = await supabase.functions.invoke('search-trigger', {
+          body: payload
+        });
+        if (error) throw error;
+      }
+      
       toast({
-        title: "Search submitted successfully!",
-        description: "Your search has been sent to n8n workflow. Results will appear in the dashboard shortly.",
+        title: "Search submitted successfully",
+        description: "Your job search has been initiated. Results will appear in the dashboard shortly.",
       });
-
-      // Reset form and close modal
-      setSearchParams({
-        keywords: "",
-        location: "",
-        radius: 10,
-        contractType: "any",
-        dateRange: "7",
-        salaryMin: 20000,
-        salaryMax: 80000,
-        category: "any",
-      });
-      onOpenChange(false);
-
-    } catch (error) {
-      console.error('Search submission error:', error);
+      
+      onClose();
+    } catch (err) {
+      console.error("Search submit failed:", err);
       toast({
         title: "Search failed",
         description: "There was an error submitting your search. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsSubmitting(false);
+      // keep modal open for user to retry
     }
-  };
+  }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto glass-card border-[hsl(var(--line))] shadow-2xl backdrop-blur-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Search className="w-5 h-5 text-primary" />
-            Search Adzuna Jobs
-          </DialogTitle>
-        </DialogHeader>
+  if (!mounted || !open) return null;
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Keywords */}
-          <div className="space-y-2">
-            <Label htmlFor="keywords" className="text-sm font-medium">
-              Keywords *
-            </Label>
-            <Input
-              id="keywords"
-              placeholder="e.g. Math Teacher, Head of Department, Science..."
-              value={searchParams.keywords}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, keywords: e.target.value }))}
-            className="bg-background/50 border-[hsl(var(--line))] smooth-transition focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+  // ---- UI ----
+  const panel = (
+    <div
+      ref={overlayRef}
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // click backdrop to close
+        if (e.target === overlayRef.current) onClose();
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="w-[min(760px,calc(100vw-48px))] rounded-2xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.06))] p-6 shadow-[0_24px_70px_rgba(0,0,0,.55)] text-slate-100"
+      >
+        {/* Header */}
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-wide">Search Adzuna Jobs</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-white/10 bg-white/10 px-3 py-1 text-sm hover:bg-white/15"
+          >
+            Close
+          </button>
+        </div>
 
-          {/* Location */}
-          <div className="space-y-2">
-            <Label htmlFor="location" className="text-sm font-medium flex items-center gap-2">
-              <MapPin className="w-4 h-4" />
-              Location
-            </Label>
-            <Input
-              id="location"
-              placeholder="e.g. London, Manchester, Birmingham..."
-              value={searchParams.location}
-              onChange={(e) => setSearchParams(prev => ({ ...prev, location: e.target.value }))}
-            className="bg-background/50 border-[hsl(var(--line))] smooth-transition focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
+        {/* Keywords */}
+        <label className="mb-1 block text-sm text-slate-300">Keywords *</label>
+        <input
+          ref={firstFieldRef}
+          value={form.keywords}
+          onChange={(e) => update("keywords", e.target.value)}
+          placeholder="e.g. Math Teacher, Head of Department, Science..."
+          className="mb-4 h-11 w-full rounded-full border border-white/10 bg-black/25 px-4 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+        />
 
-          {/* Quick Filters Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <Calendar className="w-4 h-4" />
-                Posted Within
-              </Label>
-              <Select 
-                value={searchParams.dateRange} 
-                onValueChange={(value) => setSearchParams(prev => ({ ...prev, dateRange: value }))}
-              >
-                <SelectTrigger className="bg-background/50 border-[hsl(var(--line))]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Last 24 hours</SelectItem>
-                  <SelectItem value="7">Last week</SelectItem>
-                  <SelectItem value="30">Last month</SelectItem>
-                  <SelectItem value="90">Last 3 months</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+        {/* Location */}
+        <label className="mb-1 block text-sm text-slate-300">Location</label>
+        <input
+          value={form.location || ""}
+          onChange={(e) => update("location", e.target.value)}
+          placeholder="e.g. London, Manchester, Birmingham..."
+          className="mb-4 h-11 w-full rounded-full border border-white/10 bg-black/25 px-4 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+        />
 
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <Building className="w-4 h-4" />
-                Contract Type
-              </Label>
-              <Select 
-                value={searchParams.contractType} 
-                onValueChange={(value) => setSearchParams(prev => ({ ...prev, contractType: value }))}
-              >
-                <SelectTrigger className="bg-background/50 border-[hsl(var(--line))]">
-                  <SelectValue placeholder="Any contract type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="any">Any contract type</SelectItem>
-                  <SelectItem value="permanent">Permanent</SelectItem>
-                  <SelectItem value="temporary">Temporary</SelectItem>
-                  <SelectItem value="contract">Contract</SelectItem>
-                  <SelectItem value="part_time">Part Time</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Advanced Filters */}
-          <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
-            <CollapsibleTrigger asChild>
-              <Button 
-                type="button" 
-                variant="outline" 
-                className="w-full justify-center gap-2 bg-background/50 border-[hsl(var(--line))] smooth-transition hover-lift"
-              >
-                <Filter className="w-4 h-4" />
-                {showAdvanced ? "Hide" : "Show"} Advanced Filters
-              </Button>
-            </CollapsibleTrigger>
-            
-            <CollapsibleContent className="space-y-4 pt-4">
-              {/* Job Category */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Job Category</Label>
-                <Select 
-                  value={searchParams.category} 
-                  onValueChange={(value) => setSearchParams(prev => ({ ...prev, category: value }))}
-                >
-                  <SelectTrigger className="bg-background/50 border-[hsl(var(--line))]">
-                    <SelectValue placeholder="Any category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Any category</SelectItem>
-                    <SelectItem value="teaching">Teaching Positions</SelectItem>
-                    <SelectItem value="leadership">Leadership & Management</SelectItem>
-                    <SelectItem value="support">Support Staff</SelectItem>
-                    <SelectItem value="admin">Administration</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Salary Range */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
-                  Salary Range (£{searchParams.salaryMin.toLocaleString()} - £{searchParams.salaryMax.toLocaleString()})
-                </Label>
-                <div className="px-2">
-                  <Slider
-                    value={[searchParams.salaryMin, searchParams.salaryMax]}
-                    onValueChange={([min, max]) => 
-                      setSearchParams(prev => ({ ...prev, salaryMin: min, salaryMax: max }))
-                    }
-                    min={15000}
-                    max={100000}
-                    step={1000}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Search Radius */}
-              {searchParams.location && (
-                <div className="space-y-3">
-                  <Label className="text-sm font-medium">
-                    Search Radius ({searchParams.radius} miles)
-                  </Label>
-                  <div className="px-2">
-                    <Slider
-                      value={[searchParams.radius]}
-                      onValueChange={([radius]) => 
-                        setSearchParams(prev => ({ ...prev, radius }))
-                      }
-                      min={5}
-                      max={50}
-                      step={5}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
-
-          {/* Submit Button */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="flex-1 bg-background/50 border-[hsl(var(--line))] smooth-transition hover-lift"
+        {/* Row: Posted Within + Contract Type */}
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Posted Within</label>
+            <select
+              value={String(form.dateRange)}
+              onChange={(e) => update("dateRange", Number(e.target.value) as SearchPayload["dateRange"])}
+              className="h-11 w-full rounded-full border border-white/10 bg-black/25 px-4 outline-none focus:border-cyan-300/40"
             >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting || !searchParams.keywords.trim()}
-              className="flex-1 smooth-transition hover-lift"
-            >
-              {isSubmitting ? "Submitting..." : "Search Jobs"}
-            </Button>
+              <option value="1">Last day</option>
+              <option value="7">Last week</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
           </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+          <div>
+            <label className="mb-1 block text-sm text-slate-300">Contract Type</label>
+            <select
+              value={form.contractType || "any"}
+              onChange={(e) =>
+                update("contractType", (e.target.value || "any") as SearchPayload["contractType"])
+              }
+              className="h-11 w-full rounded-full border border-white/10 bg-black/25 px-4 outline-none focus:border-cyan-300/40"
+            >
+              <option value="any">Any contract type</option>
+              <option value="permanent">Permanent</option>
+              <option value="contract">Contract</option>
+              <option value="temporary">Temporary</option>
+              <option value="part_time">Part-time</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Advanced toggle */}
+        <details className="mb-5 rounded-full border border-white/10 bg-black/20 p-3 open:rounded-2xl open:p-4">
+          <summary className="cursor-pointer select-none text-center text-sm text-slate-200">
+            Show Advanced Filters
+          </summary>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-sm text-slate-300">Salary Min</label>
+              <input
+                type="number"
+                min={0}
+                value={Number(form.salaryMin || "")}
+                onChange={(e) => update("salaryMin", e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="e.g. 30000"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-slate-300">Salary Max</label>
+              <input
+                type="number"
+                min={0}
+                value={Number(form.salaryMax || "")}
+                onChange={(e) => update("salaryMax", e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="e.g. 60000"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm text-slate-300">Radius (miles)</label>
+              <input
+                type="number"
+                min={0}
+                value={Number(form.radius || 0)}
+                onChange={(e) => update("radius", e.target.value ? Number(e.target.value) : 0)}
+                placeholder="0 = anywhere"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-sm text-slate-300">Category</label>
+              <input
+                value={form.category || ""}
+                onChange={(e) => update("category", e.target.value)}
+                placeholder="e.g. teaching (leave blank for all)"
+                className="h-11 w-full rounded-xl border border-white/10 bg-black/25 px-3 outline-none placeholder:text-slate-400 focus:border-cyan-300/40"
+              />
+            </div>
+          </div>
+        </details>
+
+        {/* Footer buttons */}
+        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 rounded-full border border-white/10 bg-white/10 font-medium text-slate-200 hover:bg-white/15"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="h-11 rounded-full bg-[rgb(96,141,196)]/85 font-semibold text-white hover:bg-[rgb(96,141,196)]"
+          >
+            Search Jobs
+          </button>
+        </div>
+      </form>
+    </div>
   );
+
+  // Render into a portal so parent layout (grids, transforms) can't push it bottom-right
+  return createPortal(panel, document.body);
 }

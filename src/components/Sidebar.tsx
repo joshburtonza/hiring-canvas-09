@@ -51,7 +51,8 @@ export function Sidebar() {
 
       <SearchModal 
         open={isSearchModalOpen} 
-        onOpenChange={setIsSearchModalOpen} 
+        onClose={() => setIsSearchModalOpen(false)}
+        webhookUrl="/search-trigger"
       />
     </>
   );
