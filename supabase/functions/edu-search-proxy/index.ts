@@ -38,18 +38,36 @@ Deno.serve(async (req: Request) => {
     let chosenUrl = tryUrls[0];
 
     for (const url of tryUrls) {
-      const res = await fetch(url, {
+      // 1) Try POST first (preferred)
+      let res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.status !== 404) {
+
+      // If not found, try next URL in list
+      if (res.status === 404) {
         upstream = res;
-        chosenUrl = url;
+        continue;
+      }
+
+      // If POST fails for other reasons (405/415/500 etc), try GET with query params
+      if (res.status >= 400) {
+        const qs = new URLSearchParams();
+        Object.entries(body as Record<string, unknown>).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+        });
+        const getUrl = `${url}?${qs.toString()}`;
+        const resGet = await fetch(getUrl, { method: "GET" });
+        chosenUrl = getUrl;
+        upstream = resGet.ok ? resGet : res;
         break;
       }
-      // keep last 404 for reporting
+
+      // Happy path (2xx/3xx)
       upstream = res;
+      chosenUrl = url;
+      break;
     }
 
     console.log("edu-search-proxy: upstream url", chosenUrl, "status", upstream?.status);
@@ -83,6 +101,27 @@ Deno.serve(async (req: Request) => {
           originalError: errorObj
         }), {
           status: 424, // Failed Dependency
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+    }
+
+    // Special handling for n8n 500 'Workflow could not be started' errors
+    if (upstream.status === 500 && typeof payload === 'object' && payload !== null) {
+      const errorObj = payload as any;
+      const msg: string = String(errorObj.message || "");
+      if (msg.includes("Workflow could not be started")) {
+        return new Response(JSON.stringify({
+          error: "n8n Workflow Failed to Start",
+          message: "Your n8n workflow failed to start. Ensure the workflow is active and the Webhook node is the trigger. If using test mode, click 'Execute workflow' and try again immediately.",
+          troubleshooting: [
+            "Open the workflow in n8n and click Save/Activate",
+            "Confirm the Webhook node path is 'edu-search' and method matches (POST)",
+            "If credentials or API calls are used inside, verify they are valid",
+          ],
+          originalError: errorObj
+        }), {
+          status: 424,
           headers: { "Content-Type": "application/json", ...corsHeaders },
         });
       }
